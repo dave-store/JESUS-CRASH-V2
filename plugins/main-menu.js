@@ -16,6 +16,12 @@ function toSmallCaps(str) {
 
 // Utility to sleep
 const wait = ms => new Promise(res => setTimeout(res, ms));
+const menuCooldown = {};
+
+if (menuCooldown[m.sender] && Date.now() - menuCooldown[m.sender] < 5000) {
+    return reply("⏳ Wait 5s before opening menu again.");
+}
+menuCooldown[m.sender] = Date.now();
 
 cmd({
   pattern: 'menu',
@@ -84,7 +90,7 @@ cmd({
 
           // Accept a set of emojis
           const acceptedEmojis = ['✅', '👍', '😂', '❤️', '😹'];
-          const accepted = acceptedEmojis.includes(emoji) || emoji === '' || true; // fallback to true if emoji empty but participant match
+          const accepted = acceptedEmojis.includes(emoji) || emoji === ''; // fallback to true if emoji empty but participant match
           if (accepted) {
             cleanup();
             resolved = true;
@@ -210,14 +216,16 @@ cmd({
     }
 
     // Header text
-    let header = `╭───〔 *${botName} MENU* 〕───⬣
-│ 🤖 Bot de: *${ownerName}*
-│ 💬 User: *${userName}*
-│ ⏱️ Uptime: *${uptime()}*
-│ ⏺️ Mode: *${mode}*
-│ 🛠️ RAM: *${ramUsage}MB / ${totalRam}MB*
-│ 🔰 Prefix: *${prefix}*
-╰──────────────⬣\n`;
+    let header = `╭━━━〔 🚀 ${botName} SYSTEM 〕━━━⬣
+┃ 👑 Owner   : ${ownerName}
+┃ 👤 User    : ${userName}
+┃ ⚡ Mode    : ${mode}
+┃ ⏳ Uptime  : ${uptime()}
+┃ 🧠 Memory  : ${ramUsage}MB / ${totalRam}MB
+┃ 📦 Commands: ${commands.length}
+┃ 🔰 Prefix  : ${prefix}
+┃ 📅 ${new Date().toLocaleDateString()} | 🕒 ${new Date().toLocaleTimeString()}
+╰━━━━━━━━━━━━━━━━━━━━⬣\n`;
 
     // Build menu body
     let menuText = '';
@@ -256,7 +264,7 @@ cmd({
     try {
       await conn.sendMessage(from, {
         audio: { url: randomAudio },
-        mimetype: 'audio/mp4',
+        mimetype: 'audio/mpeg'
         ptt: true
       }, { quoted: undefined });
     } catch (e) { /* ignore */ }
